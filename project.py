@@ -1892,8 +1892,15 @@ class Project:
             depth = self.manifest.manifestProject.depth
 
         # If the project has been manually unshallowed (e.g. via
-        # `git fetch --unshallow`), don't re-shallow it during sync.
-        if depth and not is_new and not self._HasShallow():
+        # `git fetch --unshallow`), don't re-shallow it during sync. A failed
+        # first fetch can leave an initialized gitdir without refs, though;
+        # keep the requested depth for that incomplete project on retry.
+        if (
+            depth
+            and not is_new
+            and not self._HasShallow()
+            and self.bare_ref.all
+        ):
             depth = None
 
         if depth and clone_filter_for_depth:

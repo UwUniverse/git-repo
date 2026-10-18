@@ -2609,6 +2609,43 @@ class SyncOptimizationTests(unittest.TestCase):
             self.assertTrue(res.success)
             proj._RemoteFetch.assert_called_once()
 
+    def test_retry_after_failed_initial_fetch_preserves_depth(self):
+        """An initialized but ref-less gitdir keeps the requested depth."""
+        with utils_for_test.TempGitTree() as tempdir:
+            proj = self._get_project(tempdir, depth=1)
+            os.makedirs(proj.gitdir, exist_ok=True)
+            os.makedirs(proj.objdir, exist_ok=True)
+            proj._CheckDirReference = mock.MagicMock()
+            proj._UpdateHooks = mock.MagicMock()
+            proj._HasShallow = mock.MagicMock(return_value=False)
+            proj._CheckForImmutableRevision = mock.MagicMock(return_value=False)
+            proj.bare_ref = mock.MagicMock()
+            proj.bare_ref.all = {}
+            proj._RemoteFetch = mock.MagicMock(return_value=True)
+
+            res = proj.Sync_NetworkHalf(is_new=False)
+
+            self.assertTrue(res.success)
+            self.assertEqual(proj._RemoteFetch.call_args.kwargs["depth"], 1)
+
+    def test_existing_unshallowed_project_keeps_full_history(self):
+        """Existing unshallowed projects with refs are not re-shallowed."""
+        with utils_for_test.TempGitTree() as tempdir:
+            proj = self._get_project(tempdir, depth=1)
+            os.makedirs(proj.gitdir, exist_ok=True)
+            os.makedirs(proj.objdir, exist_ok=True)
+            proj._CheckDirReference = mock.MagicMock()
+            proj._UpdateHooks = mock.MagicMock()
+            proj._HasShallow = mock.MagicMock(return_value=False)
+            proj.bare_ref = mock.MagicMock()
+            proj.bare_ref.all = {"refs/remotes/origin/main": "1234abcd"}
+            proj._RemoteFetch = mock.MagicMock(return_value=True)
+
+            res = proj.Sync_NetworkHalf(is_new=False)
+
+            self.assertTrue(res.success)
+            self.assertIsNone(proj._RemoteFetch.call_args.kwargs["depth"])
+
     def test_sync_network_half_shallow_exists_skips(self):
         """Test Sync_NetworkHalf skips fetch if shallow file exists."""
         with utils_for_test.TempGitTree() as tempdir:
@@ -2661,6 +2698,10 @@ class SyncOptimizationTests(unittest.TestCase):
             os.makedirs(other.gitdir, exist_ok=True)
             with open(os.path.join(other.gitdir, "shallow"), "w") as f:
                 f.write("")
+
+            # This project represents an existing full clone, so it has refs.
+            proj.bare_ref = mock.MagicMock()
+            proj.bare_ref.all = {"refs/remotes/origin/main": "1234abcd"}
 
             proj._RemoteFetch = mock.MagicMock()
 
